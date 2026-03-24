@@ -1,0 +1,422 @@
+﻿<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Studio</title>
+<meta name="csrf-token" content="{{ csrf_token }}">
+
+<style>
+:root{
+--bg:#020617;
+--glass:rgba(255,255,255,0.05);
+--accent:#7c3aed;
+--accent2:#06b6d4;
+--text:#e5e7eb;
+}
+
+*{box-sizing:border-box}
+
+body{
+margin:0;
+font-family:system-ui;
+background:radial-gradient(circle at top,#0f172a,#020617);
+color:var(--text);
+min-height:100vh;
+display:flex;
+justify-content:center;
+align-items:center;
+padding:40px 20px;
+}
+
+.app{
+width:100%;
+max-width:1200px;
+display:grid;
+grid-template-columns:240px 1fr;
+gap:40px;
+}
+
+.sidebar{
+background:var(--glass);
+border-radius:24px;
+padding:28px;
+display:flex;
+flex-direction:column;
+gap:20px;
+}
+
+.logo{
+font-size:22px;
+font-weight:700;
+}
+
+.nav-btn{
+padding:16px;
+border:none;
+border-radius:16px;
+background:rgba(255,255,255,0.05);
+color:white;
+cursor:pointer;
+font-weight:600;
+transition:0.3s;
+}
+
+.nav-btn.active{
+background:linear-gradient(135deg,var(--accent),var(--accent2));
+box-shadow:0 0 20px rgba(124,58,237,0.6);
+}
+
+.content{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:40px;
+}
+
+.card{
+background:var(--glass);
+border-radius:26px;
+padding:32px;
+display:flex;
+flex-direction:column;
+gap:20px;
+}
+
+textarea{
+width:100%;
+height:160px;
+background:#020617;
+border:none;
+border-radius:16px;
+padding:16px;
+color:white;
+}
+
+.upload-box{
+border:1px dashed rgba(255,255,255,0.2);
+border-radius:16px;
+padding:22px;
+text-align:center;
+cursor:pointer;
+margin-top:10px;
+}
+
+.file-name{
+font-size:12px;
+margin-top:6px;
+opacity:0.7;
+}
+
+.file-row{
+display:flex;
+gap:12px;
+margin-top:10px;
+align-items:center;
+}
+
+.file-btn{
+flex:1;
+background:#020617;
+padding:14px;
+border-radius:14px;
+text-align:center;
+cursor:pointer;
+}
+
+select{
+flex:1;
+background:#020617;
+border:none;
+border-radius:14px;
+padding:14px;
+color:white;
+}
+
+.btn{
+padding:14px 24px;
+border:none;
+border-radius:14px;
+background:linear-gradient(135deg,#7c3aed,#06b6d4);
+color:white;
+font-weight:600;
+cursor:pointer;
+width:fit-content;
+margin-top:18px;
+transition:0.3s;
+}
+
+.btn:hover{
+transform:translateY(-2px);
+box-shadow:0 10px 25px rgba(124,58,237,0.5);
+}
+
+.progress-wrap{
+height:6px;
+background:rgba(255,255,255,0.1);
+border-radius:10px;
+overflow:hidden;
+margin-top:20px;
+}
+
+.progress{
+height:100%;
+width:0%;
+background:linear-gradient(90deg,#7c3aed,#06b6d4);
+}
+
+.status{
+font-size:13px;
+opacity:0.8;
+margin-top:10px;
+}
+
+.preview{
+display:flex;
+justify-content:center;
+align-items:center;
+min-height:260px;
+}
+
+video,img{
+max-width:100%;
+border-radius:16px;
+}
+
+.download{
+margin-top:10px;
+padding:12px;
+border-radius:14px;
+background:linear-gradient(135deg,#10b981,#22c55e);
+text-align:center;
+cursor:pointer;
+display:none;
+font-weight:600;
+}
+
+.hidden{display:none}
+
+@media(max-width:900px){
+.app{grid-template-columns:1fr}
+.content{grid-template-columns:1fr}
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+
+let mode="ai"
+
+const progress=document.getElementById("progress")
+const statusText=document.getElementById("status")
+const previewVideo=document.getElementById("previewVideo")
+const previewImage=document.getElementById("previewImage")
+const downloadBtn=document.getElementById("download")
+
+const aiInput=document.getElementById("aiFile")
+const videoInput=document.getElementById("videoFile")
+
+const aiName=document.getElementById("aiName")
+const videoName=document.getElementById("videoName")
+
+const runAIbtn=document.getElementById("runAI")
+const runSubbtn=document.getElementById("runSubtitle")
+
+document.getElementById("uploadBox").onclick=()=>aiInput.click()
+document.getElementById("videoBtn").onclick=()=>videoInput.click()
+
+aiInput.onchange=()=>aiName.innerText=aiInput.files[0]?.name||""
+videoInput.onchange=()=>videoName.innerText=videoInput.files[0]?.name||""
+
+function switchMode(m){
+mode=m
+document.querySelectorAll(".mode").forEach(x=>x.classList.add("hidden"))
+document.getElementById(m+"Mode").classList.remove("hidden")
+document.querySelectorAll(".nav-btn").forEach(x=>x.classList.remove("active"))
+document.getElementById(m+"Btn").classList.add("active")
+
+statusText.innerText="Idle"
+progress.style.width="0%"
+downloadBtn.style.display="none"
+previewVideo.style.display="none"
+previewImage.style.display="none"
+}
+
+function lockUI(lock){
+runAIbtn.disabled=lock
+runSubbtn.disabled=lock
+runAIbtn.style.opacity=lock?0.5:1
+runSubbtn.style.opacity=lock?0.5:1
+}
+
+async function poll(id){
+while(true){
+let r=await fetch("/status/"+id+"/")
+let d=await r.json()
+
+progress.style.width=(d.progress||5)+"%"
+
+if(d.status==="completed"){
+statusText.innerText="Completed"
+lockUI(false)
+
+if(d.video_url){
+previewVideo.src=d.video_url
+previewVideo.style.display="block"
+previewImage.style.display="none"
+
+downloadBtn.innerText="Download Video"
+downloadBtn.style.display="block"
+downloadBtn.onclick=()=>window.open(d.video_url)
+}
+
+if(d.image_url){
+previewImage.src=d.image_url
+previewImage.style.display="block"
+previewVideo.style.display="none"
+
+downloadBtn.innerText="Download Image"
+downloadBtn.style.display="block"
+downloadBtn.onclick=()=>window.open(d.image_url)
+}
+
+break
+}
+
+if(d.status==="error"){
+statusText.innerText=d.error||"Failed"
+lockUI(false)
+break
+}
+
+await new Promise(r=>setTimeout(r,1500))
+}
+}
+
+async function runAI(){
+lockUI(true)
+statusText.innerText="Generating..."
+
+let prompt=document.getElementById("prompt").value
+let file=aiInput.files[0]
+
+let form=new FormData()
+form.append("prompt",prompt)
+if(file) form.append("file",file)
+
+let csrf=document.querySelector("meta").content
+
+let r=await fetch("/ai/",{
+method:"POST",
+headers:{"X-CSRFToken":csrf},
+body:form
+})
+
+let d=await r.json()
+poll(d.job_id)
+}
+
+async function runSubtitle(){
+lockUI(true)
+statusText.innerText="Processing video..."
+
+let file=videoInput.files[0]
+let lang=document.getElementById("lang").value
+
+let form=new FormData()
+form.append("file",file)
+form.append("language",lang)
+
+let csrf=document.querySelector("meta").content
+
+let r=await fetch("/upload/",{
+method:"POST",
+headers:{"X-CSRFToken":csrf},
+body:form
+})
+
+let d=await r.json()
+poll(d.job_id)
+}
+
+document.getElementById("aiBtn").onclick=()=>switchMode("ai")
+document.getElementById("subBtn").onclick=()=>switchMode("subtitle")
+runAIbtn.onclick=runAI
+runSubbtn.onclick=runSubtitle
+
+switchMode("ai")
+
+})
+</script>
+
+</head>
+
+<body>
+
+<div class="app">
+
+<div class="sidebar">
+<div class="logo">AI Studio</div>
+<button id="aiBtn" class="nav-btn active">AI Generator</button>
+<button id="subBtn" class="nav-btn">Subtitles</button>
+</div>
+
+<div class="content">
+
+<div class="card">
+
+<div id="aiMode" class="mode">
+<textarea id="prompt" placeholder="Describe your image or video..."></textarea>
+
+<div id="uploadBox" class="upload-box">
+Click to upload file (optional)
+<input type="file" id="aiFile" hidden>
+<div id="aiName" class="file-name"></div>
+</div>
+
+<button id="runAI" class="btn">Generate</button>
+
+</div>
+
+<div id="subtitleMode" class="mode hidden">
+
+<div class="file-row">
+<div id="videoBtn" class="file-btn">Choose Video</div>
+<input type="file" id="videoFile" hidden>
+<select id="lang">
+<option value="en">English</option>
+<option value="he">Hebrew</option>
+<option value="fr">French</option>
+<option value="es">Spanish</option>
+<option value="de">German</option>
+<option value="it">Italian</option>
+<option value="ru">Russian</option>
+</select>
+</div>
+
+<div id="videoName" class="file-name"></div>
+
+<button id="runSubtitle" class="btn">Generate Subtitles</button>
+
+</div>
+
+<div class="progress-wrap">
+<div id="progress" class="progress"></div>
+</div>
+
+<div id="status" class="status">Idle</div>
+
+<div id="download" class="download">Download</div>
+
+</div>
+
+<div class="card preview">
+<video id="previewVideo" controls style="display:none"></video>
+<img id="previewImage" style="display:none">
+</div>
+
+</div>
+
+</div>
+
+</body>
+</html>
